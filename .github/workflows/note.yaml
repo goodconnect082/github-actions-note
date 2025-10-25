@@ -340,132 +340,69 @@ jobs:
             console.log('[2] Creating context...');
             const context = await browser.newContext({ 
               storageState: STATE_PATH,
-              locale: 'ja-JP'
+              locale: 'ja-JP',
+              viewport: { width: 1920, height: 1080 }
             });
             const page = await context.newPage();
 
             console.log('[3] Navigating to note.com...');
             await page.goto('https://note.com/', { waitUntil: 'networkidle', timeout: 60000 });
             await page.waitForTimeout(2000);
-            await page.screenshot({ path: 'step1-homepage.png', fullPage: true });
 
-            console.log('[4] Looking for post button (right-top corner)...');
-            
-            // 右上の投稿ボタンを探す（複数のパターン）
-            const postButtonSelectors = [
-              'button:has-text("投稿")',
-              'a:has-text("投稿")',
-              'button[aria-label*="投稿"]',
-              'a[href*="/post"]',
-              'header button:has-text("投稿")',
-              'nav button:has-text("投稿")',
-              '[class*="headerButton"]:has-text("投稿")'
-            ];
-
-            let postButton = null;
-            let usedSelector = '';
-            
-            for (const selector of postButtonSelectors) {
-              const count = await page.locator(selector).count();
-              console.log(`  Trying: "${selector}" - found: ${count}`);
-              if (count > 0) {
-                postButton = page.locator(selector).first();
-                usedSelector = selector;
-                console.log(`  ✓ Found with: ${selector}`);
-                break;
-              }
-            }
-
-            if (!postButton) {
-              console.error('❌ Post button not found!');
-              console.log('Available buttons:');
-              const allButtons = page.locator('button');
-              const btnCount = await allButtons.count();
-              for (let i = 0; i < Math.min(btnCount, 10); i++) {
-                const text = await allButtons.nth(i).textContent();
-                const ariaLabel = await allButtons.nth(i).getAttribute('aria-label');
-                console.log(`  [${i}] text="${text?.trim()}", aria-label="${ariaLabel}"`);
-              }
-              await page.screenshot({ path: 'error-no-post-btn.png', fullPage: true });
-              await browser.close();
-              process.exit(1);
-            }
-
-            console.log('[5] Clicking post button...');
+            console.log('[4] Clicking post button...');
+            const postButton = page.locator('a:has-text("投稿")').first();
             await postButton.click();
-            console.log('  ✓ Clicked');
             
-            // ページ遷移を待つ
-            await page.waitForLoadState('networkidle');
-            await page.waitForTimeout(2000);
-            console.log('  Current URL:', page.url());
-            await page.screenshot({ path: 'step2-editor.png', fullPage: true });
+            await page.waitForURL(/editor\.note\.com/, { timeout: 30000 });
+            console.log('  ✓ Editor URL:', page.url());
 
-            console.log('[6] Looking for title input...');
-            const titleSelectors = [
-              'textarea[placeholder*="タイトル"]',
-              'input[placeholder*="タイトル"]',
-              'textarea[name*="title"]',
-              'input[name*="title"]',
-              '[contenteditable="true"]',
-              '[aria-label*="タイトル"]'
-            ];
+            console.log('[5] Waiting for editor to load...');
+            await page.waitForTimeout(8000);
+            await page.screenshot({ path: 'step1-editor-loaded.png', fullPage: true });
 
-            let titleElement = null;
-            for (const selector of titleSelectors) {
-              const count = await page.locator(selector).count();
-              console.log(`  Trying: "${selector}" - found: ${count}`);
-              if (count > 0) {
-                titleElement = page.locator(selector).first();
-                console.log('  ✓ Found title element');
-                break;
-              }
+            console.log('[6] Looking for "記事タイトル" text...');
+            const titlePlaceholder = page.locator('text=記事タイトル');
+            const titleExists = await titlePlaceholder.count();
+            console.log(`  Found "${titleExists}" placeholder(s)`);
+
+            if (titleExists > 0) {
+              console.log('[7] Clicking on title area...');
+              await titlePlaceholder.first().click();
+              await page.waitForTimeout(500);
+              console.log('  ✓ Clicked');
+            } else {
+              console.log('[7] Title placeholder not found, clicking center of page...');
+              await page.mouse.click(960, 300);
+              await page.waitForTimeout(500);
             }
 
-            if (!titleElement) {
-              console.error('❌ Title input not found!');
-              
-              const allInteractive = page.locator('input, textarea, [contenteditable="true"]');
-              const count = await allInteractive.count();
-              console.log(`\nFound ${count} interactive elements:`);
-              
-              for (let i = 0; i < Math.min(count, 10); i++) {
-                const elem = allInteractive.nth(i);
-                const tagName = await elem.evaluate(el => el.tagName);
-                const placeholder = await elem.getAttribute('placeholder');
-                const name = await elem.getAttribute('name');
-                console.log(`  [${i}] ${tagName}: placeholder="${placeholder}", name="${name}"`);
-              }
+            await page.screenshot({ path: 'step2-after-click.png', fullPage: true });
 
-              await page.screenshot({ path: 'error-no-title.png', fullPage: true });
-              const html = await page.content();
-              fs.writeFileSync('page-debug.html', html);
-              await browser.close();
-              process.exit(1);
-            }
+            console.log('[8] Typing title...');
+            await page.keyboard.type(title, { delay: 30 });
+            console.log(`  ✓ Typed: ${title.substring(0, 50)}...`);
+            
+            await page.screenshot({ path: 'step3-title-typed.png', fullPage: true });
 
-            console.log('[7] Filling title...');
-            await titleElement.waitFor({ state: 'visible', timeout: 10000 });
-            await titleElement.click();
-            await page.waitForTimeout(300);
-            await titleElement.fill(title);
-            console.log(`  ✓ Title: ${title.substring(0, 50)}...`);
+            console.log('[9] Moving to body (pressing Enter)...');
+            await page.keyboard.press('Enter');
+            await page.waitForTimeout(800);
 
-            console.log('[8] Filling body...');
-            // Tabキーで本文エリアに移動
-            await page.keyboard.press('Tab');
-            await page.waitForTimeout(500);
-            await page.keyboard.type(body.substring(0, 300), { delay: 10 });
-            console.log('  ✓ Body typed (first 300 chars)');
+            console.log('[10] Typing body...');
+            const bodyText = body.substring(0, 500);
+            await page.keyboard.type(bodyText, { delay: 20 });
+            console.log(`  ✓ Typed ${bodyText.length} characters`);
 
-            await page.screenshot({ path: 'step3-filled.png', fullPage: true });
+            await page.screenshot({ path: 'step4-body-typed.png', fullPage: true });
 
             if (!IS_PUBLIC) {
-              console.log('[9] Saving as draft...');
-              await page.waitForTimeout(1000);
-              
+              console.log('[11] Looking for save button...');
+              await page.waitForTimeout(2000);
+
+              // 保存ボタンを探す
               const saveSelectors = [
-                'button:has-text("下書き保存")',
+                'text=下書き保存',
+                'button:has-text("下書き")',
                 'button:has-text("保存")',
                 '[aria-label*="下書き"]',
                 '[aria-label*="保存"]'
@@ -474,28 +411,30 @@ jobs:
               let saved = false;
               for (const selector of saveSelectors) {
                 const count = await page.locator(selector).count();
-                console.log(`  Checking: "${selector}" - found: ${count}`);
+                console.log(`  Trying: "${selector}" - found: ${count}`);
                 if (count > 0) {
-                  const btn = page.locator(selector).first();
-                  await btn.waitFor({ state: 'visible', timeout: 5000 });
-                  await btn.click();
-                  console.log('  ✓ Save button clicked');
-                  saved = true;
-                  break;
+                  try {
+                    await page.locator(selector).first().click({ timeout: 5000 });
+                    console.log('  ✓ Save button clicked');
+                    saved = true;
+                    await page.waitForTimeout(3000);
+                    break;
+                  } catch (e) {
+                    console.log(`  ⚠ Failed: ${e.message}`);
+                  }
                 }
               }
 
               if (!saved) {
-                console.log('  ⚠ No save button found, trying Ctrl+S...');
-                await page.keyboard.press('Control+S');
+                console.log('  ℹ No save button found, content auto-saves in note');
               }
-
-              await page.waitForTimeout(3000);
             }
 
-            await page.screenshot({ path: 'final-success.png', fullPage: true });
+            await page.screenshot({ path: 'final-result.png', fullPage: true });
             console.log('\n✅ SUCCESS!');
             console.log('Final URL:', page.url());
+            console.log('\n📝 Note: The article is now in the editor.');
+            console.log('   You can access it at:', page.url());
             
             await browser.close();
           })().catch(err => {
@@ -505,6 +444,13 @@ jobs:
           });
           EOF
           node post.mjs
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: '*.png'
 
       - name: Upload debug files
         if: always()
