@@ -71,7 +71,7 @@ jobs:
           npm init -y
           npm i @anthropic-ai/sdk
 
-      - name: Research with Anthropic SDK
+　　　- name: Research with Anthropic SDK
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           THEME: ${{ github.event.inputs.theme }}
@@ -93,12 +93,7 @@ jobs:
           fs.mkdirSync(artifactsDir, { recursive: true });
 
           async function research() {
-            const message = await anthropic.messages.create({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 8000,
-              messages: [{
-                role: 'user',
-                content: あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。
+            const prompt = `あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。
 事実ベース・一次情報優先で、十分な分量（目安: 2,000語以上）のリサーチレポートを作成してください。
 
 テーマ: ${theme}
@@ -113,7 +108,14 @@ jobs:
 5. 今後の展望
 
 【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。
-不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。`
+不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。`;
+
+            const message = await anthropic.messages.create({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 8000,
+              messages: [{
+                role: 'user',
+                content: prompt
               }]
             });
 
