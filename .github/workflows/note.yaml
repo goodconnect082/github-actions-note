@@ -356,139 +356,64 @@ jobs:
             await page.waitForURL(/editor\.note\.com/, { timeout: 30000 });
             console.log('  ✓ Editor URL:', page.url());
 
-            console.log('[5] Waiting for editor to load...');
-            await page.waitForTimeout(8000);
+            console.log('[5] Waiting for editor to fully load (12 seconds)...');
+            await page.waitForTimeout(12000);
             await page.screenshot({ path: 'step1-editor-loaded.png', fullPage: true });
 
-            console.log('[6] Looking for "記事タイトル" text...');
-            const titlePlaceholder = page.locator('text=記事タイトル');
-            const titleExists = await titlePlaceholder.count();
-            console.log(`  Found "${titleExists}" placeholder(s)`);
+            console.log('[6] Clicking on editor area...');
+            await page.mouse.click(960, 300);
+            await page.waitForTimeout(1000);
 
-            if (titleExists > 0) {
-              console.log('[7] Clicking on title area...');
-              await titlePlaceholder.first().click();
-              await page.waitForTimeout(500);
-              console.log('  ✓ Clicked');
-            } else {
-              console.log('[7] Title placeholder not found, clicking center of page...');
-              await page.mouse.click(960, 300);
-              await page.waitForTimeout(500);
-            }
+            console.log('[7] Typing title...');
+            await page.keyboard.type(title, { delay: 50 });
+            console.log(`  ✓ Title: ${title.substring(0, 50)}...`);
+            await page.waitForTimeout(500);
 
-            await page.screenshot({ path: 'step2-after-click.png', fullPage: true });
-
-            console.log('[8] Typing title...');
-            await page.keyboard.type(title, { delay: 30 });
-            console.log(`  ✓ Typed: ${title.substring(0, 50)}...`);
-            
-            await page.screenshot({ path: 'step3-title-typed.png', fullPage: true });
-
-            console.log('[9] Moving to body (pressing Enter)...');
+            console.log('[8] Moving to body...');
             await page.keyboard.press('Enter');
-            await page.waitForTimeout(800);
+            await page.waitForTimeout(1000);
 
-            console.log('[10] Typing body...');
-            const bodyText = body.substring(0, 500);
-            await page.keyboard.type(bodyText, { delay: 20 });
-            console.log(`  ✓ Typed ${bodyText.length} characters`);
+            console.log('[9] Typing body...');
+            const bodyText = body.substring(0, 800);
+            await page.keyboard.type(bodyText, { delay: 30 });
+            console.log(`  ✓ Body: ${bodyText.length} characters`);
 
-            await page.screenshot({ path: 'step4-body-typed.png', fullPage: true });
+            await page.screenshot({ path: 'step2-content-filled.png', fullPage: true });
 
-            console.log('[11] Saving draft...');
-            await page.waitForTimeout(2000);
-
-            // 方法1: Escキーで下書きリストに戻る（自動保存される）
-            console.log('  Trying: ESC key...');
-            await page.keyboard.press('Escape');
+            console.log('[10] Waiting for auto-save (10 seconds)...');
+            await page.waitForTimeout(10000);
+            
+            console.log('[11] Attempting to save...');
+            
+            // 方法1: Ctrl+S (保存ショートカット)
+            console.log('  Trying: Ctrl+S...');
+            await page.keyboard.press('Control+S');
             await page.waitForTimeout(3000);
-            await page.screenshot({ path: 'step5-after-esc.png', fullPage: true });
+            await page.screenshot({ path: 'step3-after-save.png', fullPage: true });
 
-            // URLが変わったか確認
-            const currentUrl = page.url();
-            console.log('  Current URL after ESC:', currentUrl);
-
-            if (currentUrl.includes('/notes') || currentUrl.includes('/dashboard')) {
-              console.log('  ✓ Navigated to notes list (draft saved)');
-            } else {
-              console.log('  ℹ Still in editor, trying other methods...');
-
-              // 方法2: 全てのボタンをチェック
-              console.log('\n  Checking all buttons on page...');
-              const allButtons = page.locator('button, a[role="button"]');
-              const btnCount = await allButtons.count();
-              console.log(`  Total buttons found: ${btnCount}`);
-
-              for (let i = 0; i < Math.min(btnCount, 30); i++) {
-                const text = await allButtons.nth(i).textContent();
-                const ariaLabel = await allButtons.nth(i).getAttribute('aria-label');
-                const cleanText = text?.trim() || '';
-                
-                if (cleanText.includes('保存') || cleanText.includes('下書き') || 
-                    cleanText.includes('公開') || cleanText.includes('戻る') ||
-                    ariaLabel?.includes('保存') || ariaLabel?.includes('下書き')) {
-                  console.log(`  [${i}] "${cleanText}" (aria: ${ariaLabel})`);
-                  
-                  // 「下書き保存」「一時保存」などのボタンをクリック
-                  if (cleanText.includes('下書き') || cleanText.includes('一時保存')) {
-                    try {
-                      await allButtons.nth(i).click({ timeout: 3000 });
-                      console.log(`  ✓ Clicked: "${cleanText}"`);
-                      await page.waitForTimeout(3000);
-                      break;
-                    } catch (e) {
-                      console.log(`  ⚠ Failed to click: ${e.message}`);
-                    }
-                  }
-                }
-              }
-
-              // 方法3: 公開設定に進んでから戻る
-              console.log('\n  Looking for "公開設定" or similar button...');
-              const publishButtons = [
-                'text=公開設定',
-                'text=次へ',
-                'button:has-text("公開")',
-                'button:has-text("次へ")'
-              ];
-
-              for (const selector of publishButtons) {
-                const count = await page.locator(selector).count();
-                if (count > 0) {
-                  console.log(`  Found: "${selector}"`);
-                  try {
-                    await page.locator(selector).first().click({ timeout: 3000 });
-                    console.log('  ✓ Clicked');
-                    await page.waitForTimeout(2000);
-                    
-                    // 公開設定画面に移動したら、戻るボタンを探す
-                    const backButton = page.locator('button:has-text("戻る")');
-                    const backCount = await backButton.count();
-                    if (backCount > 0) {
-                      await backButton.first().click();
-                      console.log('  ✓ Returned (draft saved)');
-                      await page.waitForTimeout(2000);
-                    }
-                    break;
-                  } catch (e) {
-                    console.log(`  ⚠ Failed: ${e.message}`);
-                  }
-                }
-              }
+            // 方法2: 左上のロゴをクリックして戻る
+            console.log('  Trying: Click logo to go back...');
+            const logo = page.locator('a[href="/"]').first();
+            const logoCount = await logo.count();
+            
+            if (logoCount > 0) {
+              await logo.click();
+              await page.waitForTimeout(3000);
+              console.log('  ✓ Clicked logo');
             }
 
-            await page.screenshot({ path: 'final-result.png', fullPage: true });
-            
             const finalUrl = page.url();
+            await page.screenshot({ path: 'final-result.png', fullPage: true });
+
             console.log('\n✅ COMPLETED!');
             console.log('Final URL:', finalUrl);
-            
-            if (finalUrl.includes('editor.note.com')) {
-              console.log('\n📝 Note: Content may auto-save. Check your drafts at:');
-              console.log('   https://note.com/notes');
-            } else {
-              console.log('\n✅ Successfully saved as draft!');
-            }
+            console.log('\n📋 Summary:');
+            console.log(`  - Title typed: ${title.length} chars`);
+            console.log(`  - Body typed: ${bodyText.length} chars`);
+            console.log(`  - Auto-save wait: 10 seconds`);
+            console.log(`  - Manual save: Ctrl+S`);
+            console.log('\n💡 The article should be saved as a draft.');
+            console.log('   Check at: https://note.com/notes');
             
             await browser.close();
           })().catch(err => {
