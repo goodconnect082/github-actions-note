@@ -317,7 +317,7 @@ jobs:
           echo "Checking for session cookie:"
           grep -o "_note_session_v5" note-state.json && echo "✓ Session cookie found!" || echo "✗ Session cookie NOT found!"
 
-      - name: Post to note.com
+　　　- name: Post to note.com
         run: |
           cat > post.mjs <<'EOF'
           import { chromium } from 'playwright';
@@ -395,46 +395,100 @@ jobs:
 
             await page.screenshot({ path: 'step4-body-typed.png', fullPage: true });
 
-            if (!IS_PUBLIC) {
-              console.log('[11] Looking for save button...');
-              await page.waitForTimeout(2000);
+            console.log('[11] Saving draft...');
+            await page.waitForTimeout(2000);
 
-              // 保存ボタンを探す
-              const saveSelectors = [
-                'text=下書き保存',
-                'button:has-text("下書き")',
-                'button:has-text("保存")',
-                '[aria-label*="下書き"]',
-                '[aria-label*="保存"]'
+            // 方法1: Escキーで下書きリストに戻る（自動保存される）
+            console.log('  Trying: ESC key...');
+            await page.keyboard.press('Escape');
+            await page.waitForTimeout(3000);
+            await page.screenshot({ path: 'step5-after-esc.png', fullPage: true });
+
+            // URLが変わったか確認
+            const currentUrl = page.url();
+            console.log('  Current URL after ESC:', currentUrl);
+
+            if (currentUrl.includes('/notes') || currentUrl.includes('/dashboard')) {
+              console.log('  ✓ Navigated to notes list (draft saved)');
+            } else {
+              console.log('  ℹ Still in editor, trying other methods...');
+
+              // 方法2: 全てのボタンをチェック
+              console.log('\n  Checking all buttons on page...');
+              const allButtons = page.locator('button, a[role="button"]');
+              const btnCount = await allButtons.count();
+              console.log(`  Total buttons found: ${btnCount}`);
+
+              for (let i = 0; i < Math.min(btnCount, 30); i++) {
+                const text = await allButtons.nth(i).textContent();
+                const ariaLabel = await allButtons.nth(i).getAttribute('aria-label');
+                const cleanText = text?.trim() || '';
+                
+                if (cleanText.includes('保存') || cleanText.includes('下書き') || 
+                    cleanText.includes('公開') || cleanText.includes('戻る') ||
+                    ariaLabel?.includes('保存') || ariaLabel?.includes('下書き')) {
+                  console.log(`  [${i}] "${cleanText}" (aria: ${ariaLabel})`);
+                  
+                  // 「下書き保存」「一時保存」などのボタンをクリック
+                  if (cleanText.includes('下書き') || cleanText.includes('一時保存')) {
+                    try {
+                      await allButtons.nth(i).click({ timeout: 3000 });
+                      console.log(`  ✓ Clicked: "${cleanText}"`);
+                      await page.waitForTimeout(3000);
+                      break;
+                    } catch (e) {
+                      console.log(`  ⚠ Failed to click: ${e.message}`);
+                    }
+                  }
+                }
+              }
+
+              // 方法3: 公開設定に進んでから戻る
+              console.log('\n  Looking for "公開設定" or similar button...');
+              const publishButtons = [
+                'text=公開設定',
+                'text=次へ',
+                'button:has-text("公開")',
+                'button:has-text("次へ")'
               ];
 
-              let saved = false;
-              for (const selector of saveSelectors) {
+              for (const selector of publishButtons) {
                 const count = await page.locator(selector).count();
-                console.log(`  Trying: "${selector}" - found: ${count}`);
                 if (count > 0) {
+                  console.log(`  Found: "${selector}"`);
                   try {
-                    await page.locator(selector).first().click({ timeout: 5000 });
-                    console.log('  ✓ Save button clicked');
-                    saved = true;
-                    await page.waitForTimeout(3000);
+                    await page.locator(selector).first().click({ timeout: 3000 });
+                    console.log('  ✓ Clicked');
+                    await page.waitForTimeout(2000);
+                    
+                    // 公開設定画面に移動したら、戻るボタンを探す
+                    const backButton = page.locator('button:has-text("戻る")');
+                    const backCount = await backButton.count();
+                    if (backCount > 0) {
+                      await backButton.first().click();
+                      console.log('  ✓ Returned (draft saved)');
+                      await page.waitForTimeout(2000);
+                    }
                     break;
                   } catch (e) {
                     console.log(`  ⚠ Failed: ${e.message}`);
                   }
                 }
               }
-
-              if (!saved) {
-                console.log('  ℹ No save button found, content auto-saves in note');
-              }
             }
 
             await page.screenshot({ path: 'final-result.png', fullPage: true });
-            console.log('\n✅ SUCCESS!');
-            console.log('Final URL:', page.url());
-            console.log('\n📝 Note: The article is now in the editor.');
-            console.log('   You can access it at:', page.url());
+            
+            const finalUrl = page.url();
+            console.log('\n✅ COMPLETED!');
+            console.log('Final URL:', finalUrl);
+            
+            if (finalUrl.includes('editor.note.com')) {
+              console.log('\n📝 Note: Content may auto-save. Check your drafts at:');
+              console.log('   https://note.com/notes');
+            } else {
+              console.log('\n✅ Successfully saved as draft!');
+            }
             
             await browser.close();
           })().catch(err => {
