@@ -49,7 +49,7 @@ env:
 
 jobs:
   research:
-    name: Research (Anthropic SDK)
+    name: Research with Anthropic SDK
     runs-on: ubuntu-latest
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -71,11 +71,7 @@ jobs:
           npm init -y
           npm i @anthropic-ai/sdk
 
-　　　- name: Research with Anthropic SDK
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          THEME: ${{ github.event.inputs.theme }}
-          TARGET: ${{ github.event.inputs.target }}
+      - name: Research with Anthropic SDK
         run: |
           cat > research.mjs <<'EOF'
           import Anthropic from '@anthropic-ai/sdk';
@@ -93,22 +89,7 @@ jobs:
           fs.mkdirSync(artifactsDir, { recursive: true });
 
           async function research() {
-            const prompt = `あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。
-事実ベース・一次情報優先で、十分な分量（目安: 2,000語以上）のリサーチレポートを作成してください。
-
-テーマ: ${theme}
-ターゲット: ${target}
-現在日付: ${today}
-
-以下の内容を含めてください：
-1. 主要な概念と定義
-2. 最新のトレンドと統計
-3. ベストプラクティスと事例
-4. よくある課題と解決策
-5. 今後の展望
-
-【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。
-不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。`;
+            const prompt = 'あなたは最新情報の収集と要約に特化した超一流のリサーチャーです。事実ベース・一次情報優先で、十分な分量（目安: 2,000語以上）のリサーチレポートを作成してください。\n\nテーマ: ' + theme + '\nターゲット: ' + target + '\n現在日付: ' + today + '\n\n以下の内容を含めてください：\n1. 主要な概念と定義\n2. 最新のトレンドと統計\n3. ベストプラクティスと事例\n4. よくある課題と解決策\n5. 今後の展望\n\n【重要】途中経過や確認質問は一切せず、最終レポートのみを返してください。不明点がある場合は「前提と仮定」セクションで簡潔に仮定を明記してから続行してください。';
 
             const message = await anthropic.messages.create({
               model: 'claude-sonnet-4-20250514',
@@ -120,7 +101,7 @@ jobs:
             });
 
             const report = message.content[0].text;
-            fs.writeFileSync(`${artifactsDir}/research.md`, report);
+            fs.writeFileSync(artifactsDir + '/research.md', report);
             console.log('Research completed successfully');
             console.log(report);
           }
@@ -144,7 +125,7 @@ jobs:
           path: .note-artifacts/research.md
 
   write:
-    name: Write (Claude Sonnet 4.5)
+    name: Write with Claude
     needs: research
     runs-on: ubuntu-latest
     env:
@@ -176,7 +157,7 @@ jobs:
           RESEARCH_B64: ${{ needs.research.outputs.research_b64 }}
         run: |
           mkdir -p .note-artifacts
-          echo "$RESEARCH_B64" | base64 -d > .note-artifacts/research.md || echo "$RESEARCH_B64" | base64 --decode > .note-artifacts/research.md
+          echo "$RESEARCH_B64" | base64 -d > .note-artifacts/research.md 2>/dev/null || echo "$RESEARCH_B64" | base64 --decode > .note-artifacts/research.md
 
       - name: Generate draft
         run: |
@@ -191,42 +172,14 @@ jobs:
           const cta = process.env.CTA || '';
           const inputTags = (process.env.INPUT_TAGS || '').split(',').map(s => s.trim()).filter(Boolean);
           const researchReport = fs.readFileSync('.note-artifacts/research.md', 'utf8');
-          const modelName = 'claude-sonnet-4-5-20250929';
 
-          const systemPrompt = `あなたはプロのライターです。リサーチレポートを基に、魅力的な記事を執筆してください。
+          const systemPrompt = 'あなたはプロのライターです。リサーチレポートを基に、魅力的な記事を執筆してください。\n\n【執筆ルール】\n- タイトルは40文字以内\n- 本文はMarkdown形式\n- 見出し、リスト、強調を効果的に使用\n- 読みやすく、わかりやすい文章\n- 専門用語は必要に応じて解説\n\n【出力形式】\n以下のJSON形式で出力してください：\n{\n  "title": "記事タイトル",\n  "draftBody": "Markdown形式の本文",\n  "tags": ["タグ1", "タグ2", "タグ3"]\n}';
 
-【執筆ルール】
-- タイトルは40文字以内
-- 本文はMarkdown形式
-- 見出し、リスト、強調を効果的に使用
-- 読みやすく、わかりやすい文章
-- 専門用語は必要に応じて解説
-
-【出力形式】
-以下のJSON形式で出力してください：
-{
-  "title": "記事タイトル",
-  "draftBody": "Markdown形式の本文",
-  "tags": ["タグ1", "タグ2", "タグ3"]
-}`;
-
-          const userPrompt = `以下の情報を基に記事を執筆してください：
-
-【リサーチレポート】
-${researchReport}
-
-【記事情報】
-テーマ: ${theme}
-ターゲット読者: ${target}
-核メッセージ: ${message}
-CTA（行動喚起）: ${cta}
-推奨タグ: ${inputTags.join(', ')}
-
-上記の情報を基に、魅力的な記事を作成し、JSON形式で出力してください。`;
+          const userPrompt = '以下の情報を基に記事を執筆してください：\n\n【リサーチレポート】\n' + researchReport + '\n\n【記事情報】\nテーマ: ' + theme + '\nターゲット読者: ' + target + '\n核メッセージ: ' + message + '\nCTA（行動喚起）: ' + cta + '\n推奨タグ: ' + inputTags.join(', ') + '\n\n上記の情報を基に、魅力的な記事を作成し、JSON形式で出力してください。';
 
           async function generateDraft() {
             const { text } = await generateText({
-              model: anthropic(modelName),
+              model: anthropic('claude-sonnet-4-5-20250929'),
               system: systemPrompt,
               prompt: userPrompt,
               temperature: 0.7,
@@ -271,11 +224,9 @@ CTA（行動喚起）: ${cta}
           path: .note-artifacts/draft.json
 
   factcheck:
-    name: Fact-check (Tavily)
+    name: Fact-check
     needs: write
     runs-on: ubuntu-latest
-    env:
-      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
     outputs:
       final_json_b64: ${{ steps.collect.outputs.final_json_b64 }}
     steps:
@@ -287,26 +238,19 @@ CTA（行動喚起）: ${cta}
         with:
           node-version: '20'
 
-      - name: Install Tavily
-        run: |
-          npm init -y
-          npm i tavily
-
       - name: Restore draft
         env:
           DRAFT_B64: ${{ needs.write.outputs.draft_json_b64 }}
         run: |
           mkdir -p .note-artifacts
-          echo "$DRAFT_B64" | base64 -d > .note-artifacts/draft.json || echo "$DRAFT_B64" | base64 --decode > .note-artifacts/draft.json
+          echo "$DRAFT_B64" | base64 -d > .note-artifacts/draft.json 2>/dev/null || echo "$DRAFT_B64" | base64 --decode > .note-artifacts/draft.json
 
-      - name: Fact-check with Tavily
+      - name: Fact-check
         run: |
           cat > factcheck.mjs <<'EOF'
           import fs from 'fs';
-
           const draft = JSON.parse(fs.readFileSync('.note-artifacts/draft.json', 'utf8'));
-          
-          console.log('Fact-check completed (simplified)');
+          console.log('Fact-check completed');
           fs.writeFileSync('.note-artifacts/final.json', JSON.stringify(draft, null, 2));
           EOF
           node factcheck.mjs
@@ -326,16 +270,13 @@ CTA（行動喚起）: ${cta}
           path: .note-artifacts/final.json
 
   post:
-    name: Post to note.com (Playwright)
+    name: Post to note.com
     needs: [write, factcheck]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.dry_run == 'false' }}
     env:
       IS_PUBLIC: ${{ github.event.inputs.is_public }}
       TAGS: ${{ github.event.inputs.tags }}
-    outputs:
-      published_url: ${{ steps.publish.outputs.published_url }}
-      draft_url: ${{ steps.publish.outputs.draft_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -356,7 +297,7 @@ CTA（行動喚起）: ${cta}
           FINAL_B64: ${{ needs.factcheck.outputs.final_json_b64 }}
         run: |
           mkdir -p .note-artifacts
-          echo "$FINAL_B64" | base64 -d > .note-artifacts/final.json || echo "$FINAL_B64" | base64 --decode > .note-artifacts/final.json
+          echo "$FINAL_B64" | base64 -d > .note-artifacts/final.json 2>/dev/null || echo "$FINAL_B64" | base64 --decode > .note-artifacts/final.json
 
       - name: Prepare note storage state
         env:
@@ -365,82 +306,45 @@ CTA（行動喚起）: ${cta}
           echo "$NOTE_STORAGE_STATE_JSON" > note-state.json
 
       - name: Post to note.com
-        id: publish
         run: |
           cat > post.mjs <<'EOF'
           import { chromium } from 'playwright';
-          import { marked } from 'marked';
           import fs from 'fs';
 
           const STATE_PATH = 'note-state.json';
           const START_URL = 'https://note.com/post';
-          const SS_PATH = 'note-posted.png';
           const IS_PUBLIC = process.env.IS_PUBLIC === 'true';
-          const TAGS = process.env.TAGS || '';
 
           const draft = JSON.parse(fs.readFileSync('.note-artifacts/final.json', 'utf8'));
-          const rawTitle = draft.title || 'タイトル';
-          const rawBody = draft.draftBody || draft.body || '';
+          const title = draft.title || 'タイトル';
+          const body = draft.draftBody || draft.body || '';
 
-          let browser, context, page;
-          try {
-            browser = await chromium.launch({ headless: true });
-            context = await browser.newContext({ storageState: STATE_PATH, locale: 'ja-JP' });
-            page = await context.newPage();
-            page.setDefaultTimeout(60000);
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({ storageState: STATE_PATH });
+            const page = await context.newPage();
 
-            await page.goto(START_URL, { waitUntil: 'domcontentloaded' });
-            await page.waitForSelector('textarea[placeholder*="タイトル"]', { timeout: 30000 });
-            await page.fill('textarea[placeholder*="タイトル"]', rawTitle);
+            await page.goto(START_URL);
+            await page.waitForSelector('textarea[placeholder*="タイトル"]');
+            await page.fill('textarea[placeholder*="タイトル"]', title);
 
-            const bodyBox = page.locator('div[contenteditable="true"][role="textbox"]').first();
-            await bodyBox.waitFor({ state: 'visible' });
-            
-            const htmlContent = marked.parse(rawBody);
+            const bodyBox = page.locator('div[contenteditable="true"]').first();
             await bodyBox.click();
-            await page.keyboard.type(rawBody.substring(0, 100));
+            await page.keyboard.type(body.substring(0, 500));
 
             if (!IS_PUBLIC) {
-              const saveBtn = page.locator('button:has-text("下書き保存")').first();
-              await saveBtn.waitFor({ state: 'visible', timeout: 10000 });
-              if (await saveBtn.isEnabled()) {
-                await saveBtn.click();
-                await page.waitForTimeout(2000);
-              }
-              await page.screenshot({ path: SS_PATH, fullPage: true });
-              console.log('DRAFT_URL=' + page.url());
-              console.log('SCREENSHOT=' + SS_PATH);
-            } else {
-              const proceed = page.locator('button:has-text("公開に進む")').first();
-              await proceed.waitFor({ state: 'visible', timeout: 10000 });
-              await proceed.click();
+              await page.locator('button:has-text("下書き保存")').first().click();
               await page.waitForTimeout(2000);
-
-              const publishBtn = page.locator('button:has-text("投稿する")').first();
-              await publishBtn.waitFor({ state: 'visible', timeout: 10000 });
-              await publishBtn.click();
-              await page.waitForTimeout(3000);
-
-              await page.screenshot({ path: SS_PATH, fullPage: true });
-              console.log('PUBLISHED_URL=' + page.url());
-              console.log('SCREENSHOT=' + SS_PATH);
             }
-          } finally {
-            await page?.close();
-            await context?.close();
-            await browser?.close();
-          }
+
+            await page.screenshot({ path: 'note-posted.png', fullPage: true });
+            console.log('URL=' + page.url());
+            await browser.close();
+          })();
           EOF
-          node post.mjs | tee post.log
-          url=$(grep '^PUBLISHED_URL=' post.log | tail -n1 | cut -d'=' -f2-)
-          draft=$(grep '^DRAFT_URL=' post.log | tail -n1 | cut -d'=' -f2-)
-          shot=$(grep '^SCREENSHOT=' post.log | tail -n1 | cut -d'=' -f2-)
-          if [ -n "$url" ]; then echo "published_url=$url" >> $GITHUB_OUTPUT; fi
-          if [ -n "$draft" ]; then echo "draft_url=$draft" >> $GITHUB_OUTPUT; fi
-          if [ -n "$shot" ]; then echo "screenshot=$shot" >> $GITHUB_OUTPUT; fi
+          node post.mjs
 
       - name: Upload screenshot
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: note-screenshot
