@@ -317,7 +317,7 @@ jobs:
           echo "Checking for session cookie:"
           grep -o "_note_session_v5" note-state.json && echo "✓ Session cookie found!" || echo "✗ Session cookie NOT found!"
 
-　　　- name: Post to note.com
+      - name: Post to note.com
         run: |
           cat > post.mjs <<'EOF'
           import { chromium } from 'playwright';
