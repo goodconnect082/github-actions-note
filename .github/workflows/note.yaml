@@ -324,12 +324,7 @@ jobs:
           import fs from 'fs';
 
           const STATE_PATH = 'note-state.json';
-          const START_URL = 'https://note.com/post';
           const IS_PUBLIC = process.env.IS_PUBLIC === 'true';
-
-          console.log('\n========================================');
-          console.log('DEBUG MODE: Post to note.com');
-          console.log('========================================\n');
 
           const draft = JSON.parse(fs.readFileSync('.note-artifacts/final.json', 'utf8'));
           const title = draft.title || 'タイトル';
@@ -349,145 +344,153 @@ jobs:
             });
             const page = await context.newPage();
 
-            console.log('[3] Navigating to note.com/post...');
-            await page.goto(START_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            console.log('[3] Navigating to note.com...');
+            await page.goto('https://note.com/', { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForTimeout(2000);
+            await page.screenshot({ path: 'step1-homepage.png', fullPage: true });
+
+            console.log('[4] Looking for post button (right-top corner)...');
             
-            // 追加の待機時間
-            await page.waitForTimeout(3000);
-            console.log('[4] Current URL:', page.url());
+            // 右上の投稿ボタンを探す（複数のパターン）
+            const postButtonSelectors = [
+              'button:has-text("投稿")',
+              'a:has-text("投稿")',
+              'button[aria-label*="投稿"]',
+              'a[href*="/post"]',
+              'header button:has-text("投稿")',
+              'nav button:has-text("投稿")',
+              '[class*="headerButton"]:has-text("投稿")'
+            ];
 
-            // スクリーンショット1
-            await page.screenshot({ path: 'debug1-initial.png', fullPage: true });
-
-            // HTML構造をデバッグ
-            console.log('\n=== Debugging page structure ===');
-            const allInputs = await page.locator('input').count();
-            const allTextareas = await page.locator('textarea').count();
-            const allContentEditables = await page.locator('[contenteditable="true"]').count();
+            let postButton = null;
+            let usedSelector = '';
             
-            console.log('Input elements:', allInputs);
-            console.log('Textarea elements:', allTextareas);
-            console.log('ContentEditable elements:', allContentEditables);
+            for (const selector of postButtonSelectors) {
+              const count = await page.locator(selector).count();
+              console.log(`  Trying: "${selector}" - found: ${count}`);
+              if (count > 0) {
+                postButton = page.locator(selector).first();
+                usedSelector = selector;
+                console.log(`  ✓ Found with: ${selector}`);
+                break;
+              }
+            }
 
-            // 様々なセレクタを試す
-            const selectors = [
+            if (!postButton) {
+              console.error('❌ Post button not found!');
+              console.log('Available buttons:');
+              const allButtons = page.locator('button');
+              const btnCount = await allButtons.count();
+              for (let i = 0; i < Math.min(btnCount, 10); i++) {
+                const text = await allButtons.nth(i).textContent();
+                const ariaLabel = await allButtons.nth(i).getAttribute('aria-label');
+                console.log(`  [${i}] text="${text?.trim()}", aria-label="${ariaLabel}"`);
+              }
+              await page.screenshot({ path: 'error-no-post-btn.png', fullPage: true });
+              await browser.close();
+              process.exit(1);
+            }
+
+            console.log('[5] Clicking post button...');
+            await postButton.click();
+            console.log('  ✓ Clicked');
+            
+            // ページ遷移を待つ
+            await page.waitForLoadState('networkidle');
+            await page.waitForTimeout(2000);
+            console.log('  Current URL:', page.url());
+            await page.screenshot({ path: 'step2-editor.png', fullPage: true });
+
+            console.log('[6] Looking for title input...');
+            const titleSelectors = [
               'textarea[placeholder*="タイトル"]',
-              'textarea[name="title"]',
               'input[placeholder*="タイトル"]',
-              'input[name="title"]',
-              '[data-testid*="title"]',
+              'textarea[name*="title"]',
+              'input[name*="title"]',
+              '[contenteditable="true"]',
               '[aria-label*="タイトル"]'
             ];
 
             let titleElement = null;
-            let usedSelector = '';
-
-            for (const selector of selectors) {
+            for (const selector of titleSelectors) {
               const count = await page.locator(selector).count();
-              console.log(`Trying selector: "${selector}" - found: ${count}`);
+              console.log(`  Trying: "${selector}" - found: ${count}`);
               if (count > 0) {
                 titleElement = page.locator(selector).first();
-                usedSelector = selector;
-                console.log('✓ Found title element with:', selector);
+                console.log('  ✓ Found title element');
                 break;
               }
             }
 
             if (!titleElement) {
-              console.error('\n❌ Title element not found with any selector!');
+              console.error('❌ Title input not found!');
               
-              // 全てのinput/textareaの情報を出力
-              console.log('\n=== All input/textarea details ===');
-              const inputs = page.locator('input, textarea');
-              const inputCount = await inputs.count();
+              const allInteractive = page.locator('input, textarea, [contenteditable="true"]');
+              const count = await allInteractive.count();
+              console.log(`\nFound ${count} interactive elements:`);
               
-              for (let i = 0; i < Math.min(inputCount, 10); i++) {
-                const elem = inputs.nth(i);
+              for (let i = 0; i < Math.min(count, 10); i++) {
+                const elem = allInteractive.nth(i);
                 const tagName = await elem.evaluate(el => el.tagName);
                 const placeholder = await elem.getAttribute('placeholder');
                 const name = await elem.getAttribute('name');
-                const id = await elem.getAttribute('id');
-                const type = await elem.getAttribute('type');
-                console.log(`  [${i}] ${tagName}: placeholder="${placeholder}", name="${name}", id="${id}", type="${type}"`);
+                console.log(`  [${i}] ${tagName}: placeholder="${placeholder}", name="${name}"`);
               }
 
               await page.screenshot({ path: 'error-no-title.png', fullPage: true });
-              
-              // HTMLの一部を保存
               const html = await page.content();
               fs.writeFileSync('page-debug.html', html);
-              console.log('Saved page HTML to page-debug.html');
-              
               await browser.close();
               process.exit(1);
             }
 
-            console.log('[5] Filling title...');
+            console.log('[7] Filling title...');
             await titleElement.waitFor({ state: 'visible', timeout: 10000 });
+            await titleElement.click();
+            await page.waitForTimeout(300);
             await titleElement.fill(title);
-            console.log('✓ Title:', title.substring(0, 50));
+            console.log(`  ✓ Title: ${title.substring(0, 50)}...`);
 
-            console.log('[6] Looking for body editor...');
-            const bodySelectors = [
-              'div[contenteditable="true"]',
-              '[role="textbox"]',
-              '.editor',
-              '[data-testid*="editor"]'
-            ];
-
-            let bodyElement = null;
-            for (const selector of bodySelectors) {
-              const count = await page.locator(selector).count();
-              console.log(`Trying body selector: "${selector}" - found: ${count}`);
-              if (count > 0) {
-                bodyElement = page.locator(selector).first();
-                console.log('✓ Found body element with:', selector);
-                break;
-              }
-            }
-
-            if (!bodyElement) {
-              console.error('❌ Body editor not found!');
-              await page.screenshot({ path: 'error-no-body.png', fullPage: true });
-              await browser.close();
-              process.exit(1);
-            }
-
-            console.log('[7] Filling body...');
-            await bodyElement.click();
+            console.log('[8] Filling body...');
+            // Tabキーで本文エリアに移動
+            await page.keyboard.press('Tab');
             await page.waitForTimeout(500);
             await page.keyboard.type(body.substring(0, 300), { delay: 10 });
-            console.log('✓ Body typed');
+            console.log('  ✓ Body typed (first 300 chars)');
 
-            await page.screenshot({ path: 'debug2-filled.png', fullPage: true });
+            await page.screenshot({ path: 'step3-filled.png', fullPage: true });
 
             if (!IS_PUBLIC) {
-              console.log('[8] Looking for save button...');
+              console.log('[9] Saving as draft...');
+              await page.waitForTimeout(1000);
+              
               const saveSelectors = [
                 'button:has-text("下書き保存")',
                 'button:has-text("保存")',
-                '[data-testid*="save"]',
+                '[aria-label*="下書き"]',
                 '[aria-label*="保存"]'
               ];
 
-              let saveBtn = null;
+              let saved = false;
               for (const selector of saveSelectors) {
                 const count = await page.locator(selector).count();
-                console.log(`Trying save button: "${selector}" - found: ${count}`);
+                console.log(`  Checking: "${selector}" - found: ${count}`);
                 if (count > 0) {
-                  saveBtn = page.locator(selector).first();
+                  const btn = page.locator(selector).first();
+                  await btn.waitFor({ state: 'visible', timeout: 5000 });
+                  await btn.click();
+                  console.log('  ✓ Save button clicked');
+                  saved = true;
                   break;
                 }
               }
 
-              if (saveBtn) {
-                await saveBtn.waitFor({ state: 'visible', timeout: 10000 });
-                await saveBtn.click();
-                console.log('✓ Save button clicked');
-                await page.waitForTimeout(3000);
-              } else {
-                console.log('⚠ Save button not found, skipping...');
+              if (!saved) {
+                console.log('  ⚠ No save button found, trying Ctrl+S...');
+                await page.keyboard.press('Control+S');
               }
+
+              await page.waitForTimeout(3000);
             }
 
             await page.screenshot({ path: 'final-success.png', fullPage: true });
